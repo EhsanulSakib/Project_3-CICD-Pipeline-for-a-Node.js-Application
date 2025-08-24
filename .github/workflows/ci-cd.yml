@@ -1,21 +1,32 @@
-name: CI CD Pipeline
+name: CI/CD - Node.js (Test ➜ Artifact ➜ Deploy on Self-Hosted)
 
-on: [push]
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
+    name: Run tests & upload artifact
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
 
-      - name: Install Node.js
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "20"
+          cache: "npm"
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Run tests and capture results
         run: |
@@ -24,7 +35,7 @@ jobs:
           npm test 2>&1 | tee artifacts/test-results.txt
         continue-on-error: false
 
-      - name: Upload test results
+      - name: Upload test results artifact
         uses: actions/upload-artifact@v4
         with:
           name: test-results
@@ -33,28 +44,89 @@ jobs:
           retention-days: 7
 
   deploy:
+    name: Deploy to self-hosted runner with PM2
+    # IMPORTANT: use your runner's labels here (example below assumes linux x64)
+    runs-on: [self-hosted, linux, x64, nodejs-app]
     needs: test
-    runs-on: self-hosted
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Download test results artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results
+          path: ./downloaded-artifacts
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build project (if needed)
-        run: npm run build || echo "No build script"
-
-      - name: Restart Node app with PM2
+      - name: Show test results (evidence)
         run: |
-          pm2 delete node-app || true
-          pm2 start npm --name "node-app" -- start
+          echo "=== TEST RESULTS FROM ARTIFACT ==="
+          cat ./downloaded-artifacts/test-results.txt || true
+          echo "=================================="
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node on runner
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Prepare deploy directory
+        id: prep
+        run: |
+          # Use a stable deployment directory inside runner's HOME
+          export DEPLOY_DIR="$HOME/apps/ostad-app"
+          mkdir -p "$DEPLOY_DIR"
+          echo "DEPLOY_DIR=$DEPLOY_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Rsync project to deploy dir
+        run: |
+          rsync -a --delete --exclude ".git" --exclude "node_modules" ./ "${{ steps.prep.outputs.DEPLOY_DIR }}/"
+
+      - name: Install deps & (optionally) build
+        working-directory: ${{ steps.prep.outputs.DEPLOY_DIR }}
+        run: |
+          npm ci
+          npm run build || echo "No build script found, skipping build."
+
+      - name: Ensure PM2 is installed
+        run: |
+          if ! command -v pm2 >/dev/null 2>&1; then
+            npm i -g pm2
+          fi
+
+      - name: Write PM2 ecosystem file (if missing)
+        working-directory: ${{ steps.prep.outputs.DEPLOY_DIR }}
+        run: |
+          if [ ! -f ecosystem.config.js ]; then
+            cat > ecosystem.config.js <<'EOF'
+            module.exports = {
+              apps: [
+                {
+                  name: "ostad-app",
+                  script: "npm",
+                  args: "start",
+                  cwd: __dirname,
+                  env: {
+                    NODE_ENV: "production",
+                    PORT: "3000"
+                  }
+                }
+              ]
+            };
+            EOF
+          fi
+          cat ecosystem.config.js
+
+      - name: Start/Reload app with PM2
+        working-directory: ${{ steps.prep.outputs.DEPLOY_DIR }}
+        run: |
+          pm2 startOrReload ecosystem.config.js || pm2 start ecosystem.config.js
           pm2 save
           pm2 status
 
-      - name: Restart Nginx
+      - name: Show app is listening (optional evidence)
         run: |
-          echo "Stopping and restarting Nginx..."
-          sudo systemctl stop nginx || true
-          sudo systemctl start nginx
-          sudo systemctl status nginx --no-pager
+          # Try to show processes and a netstat summary (may vary by runner)
+          pm2 status || true
+          (command -v ss >/dev/null && ss -ltnp | head -n 50) || true
