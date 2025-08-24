@@ -67,6 +67,3 @@ jobs:
           sudo systemctl stop nginx || true
           sudo systemctl start nginx
           sudo systemctl status nginx --no-pager
-
-
-
