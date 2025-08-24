@@ -39,7 +39,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Setup Node.js
+      - name: Install Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -50,6 +50,10 @@ jobs:
       - name: Build project (if needed)
         run: npm run build || echo "No build script"
 
+      - name: Install PM2
+        run: |
+          npm install -g pm2
+
       - name: Restart Node app with PM2
         run: |
           pm2 delete node-app || true
@@ -59,8 +63,10 @@ jobs:
 
       - name: Restart Nginx
         run: |
-          echo "Restarting Nginx..."
-          sudo systemctl reload nginx || sudo systemctl restart nginx
+          echo "Stopping and restarting Nginx..."
+          sudo systemctl stop nginx || true
+          sudo systemctl start nginx
           sudo systemctl status nginx --no-pager
+
 
 
