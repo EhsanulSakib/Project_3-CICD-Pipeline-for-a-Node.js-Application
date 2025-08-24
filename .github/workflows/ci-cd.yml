@@ -32,89 +32,30 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-    name: Deploy to self-hosted runner with PM2
-    # IMPORTANT: use your runner's labels here (example below assumes linux x64)
-    runs-on: [self-hosted, linux, x64, nodejs-app]
+  deploy:
     needs: test
-
+    runs-on: [self-hosted, linux, x64]
     steps:
-      - name: Download test results artifact
-        uses: actions/download-artifact@v4
+      - name: Download test results
+        uses: actions/download-artifact@v3
         with:
           name: test-results
-          path: ./downloaded-artifacts
+          path: artifacts
 
-      - name: Show test results (evidence)
+      - name: Checkout The code
+        uses: actions/checkout@v3
+
+      - name: Install The Package
+        run: npm install
+
+      - name: Run The Application by PM2
         run: |
-          echo "=== TEST RESULTS FROM ARTIFACT ==="
-          cat ./downloaded-artifacts/test-results.txt || true
-          echo "=================================="
-
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node on runner
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-
-      - name: Prepare deploy directory
-        id: prep
-        run: |
-          # Use a stable deployment directory inside runner's HOME
-          export DEPLOY_DIR="$HOME/apps/ostad-app"
-          mkdir -p "$DEPLOY_DIR"
-          echo "DEPLOY_DIR=$DEPLOY_DIR" >> "$GITHUB_OUTPUT"
-
-      - name: Rsync project to deploy dir
-        run: |
-          rsync -a --delete --exclude ".git" --exclude "node_modules" ./ "${{ steps.prep.outputs.DEPLOY_DIR }}/"
-
-      - name: Install deps & (optionally) build
-        working-directory: ${{ steps.prep.outputs.DEPLOY_DIR }}
-        run: |
-          npm ci
-          npm run build || echo "No build script found, skipping build."
-
-      - name: Ensure PM2 is installed
-        run: |
-          if ! command -v pm2 >/dev/null 2>&1; then
-            npm i -g pm2
-          fi
-
-      - name: Write PM2 ecosystem file (if missing)
-        working-directory: ${{ steps.prep.outputs.DEPLOY_DIR }}
-        run: |
-          if [ ! -f ecosystem.config.js ]; then
-            cat > ecosystem.config.js <<'EOF'
-            module.exports = {
-              apps: [
-                {
-                  name: "ostad-app",
-                  script: "npm",
-                  args: "start",
-                  cwd: __dirname,
-                  env: {
-                    NODE_ENV: "production",
-                    PORT: "3000"
-                  }
-                }
-              ]
-            };
-            EOF
-          fi
-          cat ecosystem.config.js
-
-      - name: Start/Reload app with PM2
-        working-directory: ${{ steps.prep.outputs.DEPLOY_DIR }}
-        run: |
-          pm2 startOrReload ecosystem.config.js || pm2 start ecosystem.config.js
+          ls -a
+          pm2 start
+          pm2 delete node-app || true
+          pm2 start "npm start" --name="node-app"
           pm2 save
-          pm2 status
 
-      - name: Show app is listening (optional evidence)
-        run: |
-          # Try to show processes and a netstat summary (may vary by runner)
-          pm2 status || true
-          (command -v ss >/dev/null && ss -ltnp | head -n 50) || true
+
+      
+
