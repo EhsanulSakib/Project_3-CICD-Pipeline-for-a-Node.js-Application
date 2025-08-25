@@ -31,56 +31,51 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  deploy:
-    needs: test
-    runs-on: self-hosted
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+deploy:
+  needs: test
+  runs-on: self-hosted
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "22"
 
-      - name: Install dependencies
-        run: npm install
+    - name: Install dependencies
+      run: npm install
 
-      - name: Build project (if needed)
-        run: npm run build || echo "No build script"
+    - name: Build frontend
+      run: npm run build
 
-      - name: Install PM2
-        run: npm install -g pm2
+    - name: Install Nginx
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y nginx
 
-      - name: Start Node.js app with PM2
-        run: |
-          pm2 delete node-app || true
-          # Change PORT if your app needs a different one
-          PORT=5000 pm2 start npm --name "node-app" -- start
-          pm2 save
-          pm2 status
+    - name: Configure Nginx for Vite app
+      run: |
+        # Copy Vite build output to nginx web root
+        sudo rm -rf /var/www/html/*
+        sudo cp -r dist/* /var/www/html/
 
-      - name: Install Nginx
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y nginx
+        # Configure nginx server block
+        sudo tee /etc/nginx/sites-available/vite-app <<EOL
+        server {
+            listen 80;
+            server_name _;
 
-      - name: Configure Nginx
-        run: |
-          sudo tee /etc/nginx/sites-available/node-app <<EOL
-          server {
-              listen 80;
-              server_name _;
+            root /var/www/html;
+            index index.html;
 
-              location / {
-                  proxy_pass http://127.0.0.1:5000;
-                  proxy_set_header Host \$host;
-                  proxy_set_header X-Real-IP \$remote_addr;
-                  proxy_set_header X-Forwarded-for \$proxy_add_x_forwarded_for;
-              }
-          }
-          EOL
+            location / {
+                try_files \$uri /index.html;
+            }
+        }
+        EOL
 
-          sudo ln -sf /etc/nginx/sites-available/node-app /etc/nginx/sites-enabled/
-          sudo nginx -t
-          sudo systemctl restart nginx
+        sudo ln -sf /etc/nginx/sites-available/vite-app /etc/nginx/sites-enabled/
+        sudo nginx -t
+        sudo systemctl restart nginx
+
