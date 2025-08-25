@@ -32,53 +32,53 @@ jobs:
           retention-days: 7
 
   deploy:
-  needs: test
-  runs-on: self-hosted
-  steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+    needs: test
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Install Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: "22"
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
-    - name: Install dependencies
-      run: npm install
+      - name: Install dependencies
+        run: npm install
 
-    - name: Install PM2
-      run: npm install -g pm2
+      - name: Install PM2
+        run: npm install -g pm2
 
-    - name: Start Node.js app with PM2
-      run: |
-        pm2 delete node-app || true
-        PORT=5000 pm2 start npm --name "node-app" -- start
-        pm2 save
-        pm2 status
+      - name: Start Node.js app with PM2
+        run: |
+          pm2 delete node-app || true
+          PORT=5000 pm2 start npm --name "node-app" -- start
+          pm2 save
+          pm2 status
 
-    - name: Install Nginx
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y nginx
+      - name: Install Nginx
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nginx
 
-    - name: Configure Nginx for Express app
-      run: |
-        sudo tee /etc/nginx/sites-available/node-app <<EOL
-        server {
-            listen 80;
-            server_name _;
+      - name: Configure Nginx for Express app
+        run: |
+          sudo tee /etc/nginx/sites-available/node-app <<EOL
+          server {
+              listen 80;
+              server_name _;
 
-            location / {
-                proxy_pass http://127.0.0.1:5000;
-                proxy_set_header Host \$host;
-                proxy_set_header X-Real-IP \$remote_addr;
-                proxy_set_header X-Forwarded-for \$proxy_add_x_forwarded_for;
-            }
-        }
-        EOL
+              location / {
+                  proxy_pass http://127.0.0.1:5000;
+                  proxy_set_header Host \$host;
+                  proxy_set_header X-Real-IP \$remote_addr;
+                  proxy_set_header X-Forwarded-for \$proxy_add_x_forwarded_for;
+              }
+          }
+          EOL
 
-        sudo ln -sf /etc/nginx/sites-available/node-app /etc/nginx/sites-enabled/
-        sudo nginx -t
-        sudo systemctl restart nginx
+          sudo ln -sf /etc/nginx/sites-available/node-app /etc/nginx/sites-enabled/
+          sudo nginx -t
+          sudo systemctl restart nginx
 
 
