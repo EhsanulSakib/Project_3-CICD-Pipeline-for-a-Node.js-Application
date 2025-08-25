@@ -31,51 +31,51 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-deploy:
-  needs: test
-  runs-on: self-hosted
-  steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+  deploy:
+    needs: test
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Install Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: "22"
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
-    - name: Install dependencies
-      run: npm install
+      - name: Install dependencies
+        run: npm install
 
-    - name: Build frontend
-      run: npm run build
+      - name: Build frontend
+        run: npm run build
 
-    - name: Install Nginx
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y nginx
+      - name: Install Nginx
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nginx
 
-    - name: Configure Nginx for Vite app
-      run: |
-        # Copy Vite build output to nginx web root
-        sudo rm -rf /var/www/html/*
-        sudo cp -r dist/* /var/www/html/
+      - name: Configure Nginx for Vite app
+        run: |
+          # Copy Vite build output to nginx web root
+          sudo rm -rf /var/www/html/*
+          sudo cp -r dist/* /var/www/html/
 
-        # Configure nginx server block
-        sudo tee /etc/nginx/sites-available/vite-app <<EOL
-        server {
-            listen 80;
-            server_name _;
+          # Configure nginx server block
+          sudo tee /etc/nginx/sites-available/vite-app <<EOL
+          server {
+              listen 80;
+              server_name _;
 
-            root /var/www/html;
-            index index.html;
+              root /var/www/html;
+              index index.html;
 
-            location / {
-                try_files \$uri /index.html;
-            }
-        }
-        EOL
+              location / {
+                  try_files \$uri /index.html;
+              }
+          }
+          EOL
 
-        sudo ln -sf /etc/nginx/sites-available/vite-app /etc/nginx/sites-enabled/
-        sudo nginx -t
-        sudo systemctl restart nginx
+          sudo ln -sf /etc/nginx/sites-available/vite-app /etc/nginx/sites-enabled/
+          sudo nginx -t
+          sudo systemctl restart nginx
 
